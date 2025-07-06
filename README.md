@@ -45,7 +45,7 @@ A minimal x86 kernel written in C and assembly, designed for educational purpose
 
 2. Build the project:
    ```bash
-   build.bat
+   make
    ```
    
    This will:
