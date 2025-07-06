@@ -4,7 +4,7 @@
 #include "parser.h"
 #include "../include/types.h"
 #include "../include/string.h"
-#include "../include/port_io.h"
+#include <port_io.h>
 
 static char input[INPUT_BUF];
 static char history[MAX_HISTORY][INPUT_BUF];

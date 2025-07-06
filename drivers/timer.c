@@ -1,6 +1,7 @@
 #include "timer.h"
-#include "../drivers/vga.h"   // optional debug output
+#include "vga.h"   // optional debug output
 #include <stdint.h>
+#include "../include/kernel/io.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -8,15 +9,7 @@
 
 static volatile uint32_t ticks = 0;
 
-static inline uint8_t inb(uint16_t port) {
-    uint8_t val;
-    __asm__ volatile ("inb %1, %0" : "=a"(val) : "Nd"(port));
-    return val;
-}
-
-static inline void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
+// inb and outb are defined in kernel/io.h
 
 // Initialize PIT to generate interrupts at frequency Hz
 void timer_init(uint32_t frequency) {
@@ -30,8 +23,13 @@ void timer_init(uint32_t frequency) {
     outb(0x21, mask);
 }
 
-void timer_handler(void) {
+void timer_handler(registers_t *regs) {
+    (void)regs; // Mark as unused to prevent warning
     ticks++;
+    
+    // Acknowledge the timer interrupt
+    outb(0x20, 0x20);
+    
     // Optional: do something every tick
 }
 

@@ -29,7 +29,7 @@ void vga_set_color(uint8_t fg, uint8_t bg);
 void vga_get_color(uint8_t* fg, uint8_t* bg);
 void vga_putc(char c);
 void vga_puts(const char* str);
-void vga_puthex(uint32_t n);
+void vga_puthex(uint32_t num);
 void vga_putdec(uint32_t n);
 void vga_move_cursor(uint8_t row, uint8_t col);
 void vga_get_cursor(uint8_t* row, uint8_t* col);

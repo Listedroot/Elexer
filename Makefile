@@ -4,10 +4,9 @@
 CC = gcc
 AS = nasm
 LD = ld
-OBJCOPY = objcopy
-CFLAGS = -m32 -fno-pie -fno-stack-protector -nostdlib -nostdinc -fno-builtin -fno-common -fno-pic -Wall -Wextra -Werror -Iinclude
-ASFLAGS = -f win32
-LDFLAGS = -m i386pe -T linker.ld -nostdlib
+CFLAGS = -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostdinc -fno-builtin -fno-common -fno-pic -Wall -Wextra -Werror -Iinclude -g
+ASFLAGS = -f win32 -g
+LDFLAGS = -m i386pe -T linker.ld -nostdlib --entry=_start --oformat=pei-i386 -Map=kernel.map
 
 # Detect Windows
 ifeq ($(OS),Windows_NT)
@@ -16,81 +15,147 @@ ifeq ($(OS),Windows_NT)
     RMDIR = rmdir /s /q
     CP = copy /y
     FIXPATH = $(subst /,\,$1)
-    DD = fsutil file createnew $(call FIXPATH,$1) $(shell if [ "$2" -gt "0" ]; then echo $2; else echo 1; fi) >nul 2>&1
-    APPEND = type $(call FIXPATH,$1) >> $(call FIXPATH,$2)
-    SEEK = 
+    OBJDIR = obj
+    KERNEL_OBJDIR = $(OBJDIR)/kernel
+    DRIVER_OBJDIR = $(OBJDIR)/drivers
+    LIBC_OBJDIR = $(OBJDIR)/libc
 else
     RM = rm -f
     MKDIR = mkdir -p
     RMDIR = rm -rf
     CP = cp -f
     FIXPATH = $1
-    DD = dd if=/dev/zero of=$1 bs=1 count=$2 >/dev/null 2>&1
-    APPEND = cat $1 >> $2
-    SEEK = seek=1
+    OBJDIR = obj
+    KERNEL_OBJDIR = $(OBJDIR)/kernel
+    DRIVER_OBJDIR = $(OBJDIR)/drivers
+    LIBC_OBJDIR = $(OBJDIR)/libc
 endif
 
 # Source directories
 KERNEL_SRCDIR = kernel
 DRIVER_SRCDIR = drivers
 LIBC_SRCDIR = libc
-BOOT_SRCDIR = boot
 
 # Output files
 KERNEL = kernel.bin
 KERNEL_IMG = kernel.img
-BOOTLOADER = $(BOOT_SRCDIR)/boot.bin
 
-# Source files
-KERNEL_SRCS = $(wildcard $(KERNEL_SRCDIR)/*.c) \
-              $(wildcard $(KERNEL_SRCDIR)/*.s) \
-              $(wildcard $(KERNEL_SRCDIR)/*.asm)
+# Find all source files
+KERNEL_C_SRCS = $(wildcard $(KERNEL_SRCDIR)/*.c)
+KERNEL_ASM_SRCS = $(KERNEL_SRCDIR)/start.asm $(KERNEL_SRCDIR)/interrupts.asm
+DRIVER_C_SRCS = $(wildcard $(DRIVER_SRCDIR)/*.c)
 
-DRIVER_SRCS = $(wildcard $(DRIVER_SRCDIR)/*.c)
-LIBC_SRCS = $(wildcard $(LIBC_SRCDIR)/*.c)
+# Object files - explicitly list all required object files in the correct order
+# Note: The order here is critical for proper linking
+# Kernel object files in specific order
+KERNEL_OBJS = \
+    $(KERNEL_OBJDIR)/start.o \
+    $(KERNEL_OBJDIR)/interrupts_asm.o \
+    $(KERNEL_OBJDIR)/interrupts.o \
+    $(KERNEL_OBJDIR)/pic.o \
+    $(KERNEL_OBJDIR)/irq_dispatch.o \
+    $(KERNEL_OBJDIR)/kernel.o \
+    $(KERNEL_OBJDIR)/kprint.o \
+    $(KERNEL_OBJDIR)/main.o \
+    $(KERNEL_OBJDIR)/mm.o \
+    $(KERNEL_OBJDIR)/panic.o \
+    $(LIBC_OBJDIR)/string.o \
+    $(DRIVER_OBJDIR)/keyboard.o \
+    $(DRIVER_OBJDIR)/serial.o \
+    $(DRIVER_OBJDIR)/timer.o \
+    $(DRIVER_OBJDIR)/vga.o
 
-# Object files
-KERNEL_OBJS = $(patsubst %.c,%.o,$(patsubst %.s,%.o,$(patsubst %.asm,%.o,$(KERNEL_SRCS))))
-DRIVER_OBJS = $(patsubst %.c,%.o,$(DRIVER_SRCS))
-LIBC_OBJS = $(patsubst %.c,%.o,$(LIBC_SRCS))
+# Explicitly list all source files to ensure they're built
+KERNEL_SOURCES = \
+    kernel/start.asm \
+    kernel/interrupts.asm \
+    kernel/pic.c \
+    kernel/irq_dispatch.c \
+    kernel/kernel.c \
+    kernel/kprint.c \
+    kernel/main.c \
+    kernel/mm.c \
+    kernel/panic.c \
+    kernel/interrupts.c \
+    drivers/keyboard.c \
+    drivers/serial.c \
+    drivers/timer.c \
+    drivers/vga.c
 
 # Default target
 all: $(KERNEL_IMG)
 
-# Build the kernel image
-$(KERNEL_IMG): $(BOOTLOADER) $(KERNEL)
-	$(call DD,$@,1474560)  # 1.44MB floppy image
-	$(CP) $(call FIXPATH,$(BOOTLOADER)) $(call FIXPATH,$@)
-	$(CP) $(call FIXPATH,$(KERNEL)) $(call FIXPATH,temp_kernel.bin)
-	$(APPEND,temp_kernel.bin,$@)
-	$(RM) temp_kernel.bin
+# Create output directories
+$(KERNEL_OBJDIR):
+	@$(MKDIR) $(call FIXPATH,$@)
 
-# Build the kernel
-$(KERNEL): $(KERNEL_OBJS) $(DRIVER_OBJS) $(LIBC_OBJS)
-	$(LD) $(LDFLAGS) -o $@ $^
+# Rule for start.asm
+$(KERNEL_OBJDIR)/start.o: $(KERNEL_SRCDIR)/start.asm | $(KERNEL_OBJDIR)
+	@echo "AS $<"
+	@$(AS) -f win32 $< -o $@
 
-# Build the bootloader
-$(BOOTLOADER): $(BOOT_SRCDIR)/boot.asm
-	$(AS) -f bin $< -o $@
+# Rule for interrupts.asm
+$(KERNEL_OBJDIR)/interrupts_asm.o: $(KERNEL_SRCDIR)/interrupts.asm | $(KERNEL_OBJDIR)
+	@echo "AS $< (as interrupts_asm.o)"
+	@$(AS) -f win32 $< -o $@
 
-# Pattern rule for compiling C files
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Rule for interrupts.c
+$(KERNEL_OBJDIR)/interrupts.o: $(KERNEL_SRCDIR)/interrupts.c | $(KERNEL_OBJDIR)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
-# Pattern rule for assembling ASM files
-%.o: %.s
-	$(AS) $(ASFLAGS) $< -o $@
+# Rule for libc string.c
+$(LIBC_OBJDIR)/string.o: $(LIBC_SRCDIR)/string.c | $(LIBC_OBJDIR)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
-# Pattern rule for assembling NASM files
-%.o: %.asm
-	$(AS) -f win32 $< -o $@
+# Ensure libc directory exists
+$(LIBC_OBJDIR):
+	@$(MKDIR) $(call FIXPATH,$@)
+
+# Ensure interrupts.o is built before other objects that depend on it
+$(KERNEL_OBJDIR)/pic.o $(KERNEL_OBJDIR)/irq_dispatch.o $(KERNEL_OBJDIR)/kernel.o: $(KERNEL_OBJDIR)/interrupts.o
+
+# Rule for compiling kernel C files
+$(KERNEL_OBJDIR)/%.o: $(KERNEL_SRCDIR)/%.c | $(KERNEL_OBJDIR)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# Rule for compiling driver C files
+$(DRIVER_OBJDIR)/%.o: $(DRIVER_SRCDIR)/%.c | $(DRIVER_OBJDIR)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+
+# Create driver object directory
+$(DRIVER_OBJDIR):
+	@$(MKDIR) $(call FIXPATH,$@)
+
+# Compile driver C files
+$(DRIVER_OBJDIR)/%.o: $(DRIVER_SRCDIR)/%.c | $(DRIVER_OBJDIR)
+	@echo "CC $<"
+	@$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+
+# Link kernel
+$(KERNEL): $(KERNEL_OBJS)
+	@echo "Linking $@..."
+	@echo "Object files: $(KERNEL_OBJS)"
+	@$(LD) -m i386pe -T linker.ld -nostdlib --oformat=pei-i386 -o $@ $(KERNEL_OBJS) -Map=kernel.map
+
+# Create kernel image
+$(KERNEL_IMG): $(KERNEL)
+	@echo "Creating $@..."
+	@$(CP) $(call FIXPATH,$(KERNEL)) $(call FIXPATH,$@)
 
 # Clean build artifacts
 clean:
-	$(RM) $(call FIXPATH,$(KERNEL_OBJS) $(DRIVER_OBJS) $(LIBC_OBJS) $(KERNEL) $(KERNEL_IMG) $(BOOTLOADER))
+	@echo "Cleaning..."
+	@if exist $(call FIXPATH,$(OBJDIR)) $(RMDIR) $(call FIXPATH,$(OBJDIR))
+	@if exist $(call FIXPATH,$(KERNEL)) $(RM) $(call FIXPATH,$(KERNEL))
+	@if exist $(call FIXPATH,$(KERNEL_IMG)) $(RM) $(call FIXPATH,$(KERNEL_IMG))
 
 # Run the kernel in QEMU
 run: $(KERNEL_IMG)
-	qemu-system-i386 -fda $<
+	@echo "Running in QEMU..."
+	qemu-system-i386 -kernel $(KERNEL)
 
 .PHONY: all clean run

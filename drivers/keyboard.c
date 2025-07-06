@@ -1,7 +1,8 @@
 #include "keyboard.h"
 #include "../libc/string.h"
-#include "../drivers/vga.h"   // optional for debug prints
+#include "vga.h"   // optional for debug prints
 #include <stdint.h>
+#include <stdbool.h>
 
 #define KBD_DATA_PORT   0x60
 #define KBD_STATUS_PORT 0x64
@@ -14,7 +15,7 @@ static volatile int head = 0;
 static volatile int tail = 0;
 
 // Scancode to ASCII (partial US layout, no shift support for simplicity)
-static const char scancode_to_ascii[128] = {
+static const char scancode_to_ascii[] = {
     0, 27, '1','2','3','4','5','6','7','8',
     '9','0','-','=', '\b','\t','q','w','e','r',
     't','y','u','i','o','p','[',']', '\n', 0,
@@ -24,15 +25,7 @@ static const char scancode_to_ascii[128] = {
     // rest zeros
 };
 
-static inline uint8_t inb(uint16_t port) {
-    uint8_t val;
-    __asm__ volatile("inb %1, %0" : "=a"(val) : "Nd"(port));
-    return val;
-}
-
-static inline void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
-}
+// inb and outb are defined in kernel/io.h
 
 // Put char into circular buffer
 static void buffer_put(char c) {
@@ -52,13 +45,20 @@ static char buffer_get(void) {
 }
 
 // Interrupt handler, called from IRQ1
-void keyboard_handler(void) {
+void keyboard_handler(registers_t *regs)
+{
+    (void)regs; // Mark as unused to prevent compiler warning
+    
     uint8_t status = inb(KBD_STATUS_PORT);
     if (status & 0x01) {
         uint8_t scancode = inb(KBD_DATA_PORT);
-        if (scancode < 128) {
+        
+        // Only handle key press events (ignore key releases for now)
+        if (scancode < 0x80) {
             char c = scancode_to_ascii[scancode];
-            if (c) buffer_put(c);
+            if (c) {
+                buffer_put(c);
+            }
         }
     }
 }

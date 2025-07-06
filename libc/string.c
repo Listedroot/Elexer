@@ -47,6 +47,15 @@ char* strncpy(char* dest, const char* src, size_t n) {
     return dest;
 }
 
+/* Sets the first n bytes of the memory area pointed to by s to the specified value */
+void* memset(void* s, int c, size_t n) {
+    unsigned char* p = (unsigned char*)s;
+    for (size_t i = 0; i < n; i++) {
+        p[i] = (unsigned char)c;
+    }
+    return s;
+}
+
 /* Converts a decimal string to an integer */
 int atoi(const char* str) {
     int result = 0;

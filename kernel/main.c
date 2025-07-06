@@ -33,7 +33,7 @@ void _start(void) {
     vga_puts("Interrupts enabled\n");
 
     // Call the main kernel function from kernel.c
-    kernel_main();
+    _kernel_main();
 
     // If kernel_main returns, halt the system
     for (;;) {
@@ -46,12 +46,4 @@ void halt(void) {
     __asm__ volatile ("hlt");
 }
 
-// Disable interrupts
-void cli(void) {
-    __asm__ volatile ("cli");
-}
-
-// Enable interrupts
-void sti(void) {
-    __asm__ volatile ("sti");
-}
+// cli() and sti() are defined in interrupts.h
