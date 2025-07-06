@@ -49,7 +49,6 @@ A minimal x86 kernel written in C and assembly, designed for educational purpose
    ```
    
    This will:
-   - Clean previous build artifacts
    - Compile the bootloader and kernel
    - Link all components
    - Generate a bootable disk image
